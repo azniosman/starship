@@ -4,6 +4,8 @@ This project is for configuring and personalizing the [Starship prompt](https://
 
 ## Overview
 
+![Starship Prompt](https://starship.rs/presets/nerd-font-symbols.png)
+
 The primary goal of this project is to create a customized Starship prompt that is both aesthetically pleasing and functional. This includes:
 
 *   **Improving shell productivity:** By providing essential information at a glance.
@@ -12,9 +14,13 @@ The primary goal of this project is to create a customized Starship prompt that 
 
 ## Tech Stack
 
-*   **Shells:** Bash, Zsh, Fish
-*   **Prompt Engine:** [Starship](https://starship.rs) (TOML-based config)
-*   **Languages (for custom modules):** Rust, Node.js, shell scripts
+![Bash](https://img.shields.io/badge/Shell-Bash-blue)
+![Zsh](https://img.shields.io/badge/Shell-Zsh-blue)
+![Fish](https://img.shields.io/badge/Shell-Fish-blue)
+![Starship](https://img.shields.io/badge/Prompt%20Engine-Starship-red)
+![Python](https://img.shields.io/badge/Language-Python-yellow)
+![Rust](https://img.shields.io/badge/Language-Rust-orange)
+![Node.js](https://img.shields.io/badge/Language-Node.js-green)
 
 ## Project Structure
 
