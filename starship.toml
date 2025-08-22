@@ -259,7 +259,7 @@ command = "~/.config/starship/starship_manager.py prompt"
 when = true
 format = "[$output]($style) "
 style = "bold #83a598"
-# FIX: Added a module-specific timeout of 3000ms (3 seconds) to prevent
-# the script from timing out on slow network connections.
-#command_timeout = 3000
-ignore_timeout = true
+# It is recommended to run the cache update in the background periodically.
+# For example, you can use a cron job to run the following command every 10 minutes:
+# */10 * * * * /usr/bin/python ~/.config/starship/starship_manager.py update_cache
+command_timeout = 3000

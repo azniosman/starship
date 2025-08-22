@@ -26,6 +26,10 @@ def load_config():
         "logging": { "enabled": False, "level": "INFO", "log_file": "~/.cache/starship/ip_location.log" }
     }
 
+    abuseipdb_api_key = os.environ.get("ABUSEIPDB_API_KEY")
+    if abuseipdb_api_key:
+        default_config["abuseipdb_api_key"] = abuseipdb_api_key
+
     try:
         with open(config_path, 'r') as f:
             user_config = json.load(f)
@@ -69,7 +73,7 @@ def fetch_ip_info(config, logger=None):
     """Fetches public IP information from a list of third-party services."""
     services = [
         {"name": "ipinfo.io", "url": "https://ipinfo.io/json", "parser": parse_ipinfo},
-        {"name": "ip-api.com", "url": "http://ip-api.com/json?fields=status,message,countryCode,city,regionName,org,as,query,timezone", "parser": parse_ip_api},
+        {"name": "ip-api.com", "url": "https://ip-api.com/json?fields=status,message,countryCode,city,regionName,org,as,query,timezone", "parser": parse_ip_api},
     ]
     headers = {'User-Agent': 'Mozilla/5.0'}
     for service in services:
@@ -79,8 +83,11 @@ def fetch_ip_info(config, logger=None):
                 data = json.loads(response.read().decode('utf-8'))
             result = service["parser"](data)
             if result and result.get("ip"): return result
-        except Exception as e:
+        except (URLError, HTTPError) as e:
             if logger: logger.warning(f"Service {service['name']} failed: {e}")
+            continue
+        except json.JSONDecodeError:
+            if logger: logger.warning(f"Failed to parse JSON from {service['name']}")
             continue
     return None
 
@@ -207,7 +214,7 @@ def handle_update_cache(config, logger=None):
     Fetches all network data and writes it to the cache.
     This is intended to be run as a background task.
     """
-    print("Encrypting session...")
+    print("Updating cache...")
     ip_data = fetch_ip_info(config, logger)
     abuse_data = None
     if ip_data and ip_data.get("ip") and config.get("abuseipdb_api_key"):
@@ -219,7 +226,7 @@ def handle_update_cache(config, logger=None):
         "abuse_data": abuse_data
     }
     write_cache(config, all_data, logger)
-    print("Encryption complete.")
+    print("Cache updated.")
 
 def handle_prompt(config, logger):
     """

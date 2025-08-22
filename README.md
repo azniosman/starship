@@ -4,7 +4,7 @@ This project is for configuring and personalizing the [Starship prompt](https://
 
 ## Overview
 
-![Starship Prompt](@warp-screenshot.png)
+![Starship Prompt](warp-screenshot.png)
 
 The primary goal of this project is to create a customized Starship prompt that is both aesthetically pleasing and functional. This includes:
 
@@ -93,6 +93,16 @@ The `starship_manager.py` script provides the following features:
     ```bash
     cp ~/.config/starship/starship.toml ~/.config/starship.toml
     ```
+
+## Configuration
+
+To use the AbuseIPDB integration, you need to set the `ABUSEIPDB_API_KEY` environment variable to your AbuseIPDB API key.
+
+You can add the following to your shell's configuration file (e.g., `~/.bashrc`, `~/.zshrc`):
+
+```bash
+export ABUSEIPDB_API_KEY="your_api_key"
+```
 
 ## Usage
 
