@@ -4,7 +4,7 @@ This project is for configuring and personalizing the [Starship prompt](https://
 
 ## Overview
 
-![Starship Prompt](https://starship.rs/presets/nerd-font-symbols.png)
+![Starship Prompt](@warp-screenshot.png)
 
 The primary goal of this project is to create a customized Starship prompt that is both aesthetically pleasing and functional. This includes:
 
