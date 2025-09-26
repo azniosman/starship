@@ -47,9 +47,10 @@ The `starship_manager.py` script provides the following features:
     *   AbuseIPDB score.
     *   Firewall status (UFW for Linux, pfctl for macOS).
     *   SSH agent status.
-*   **IP Masking:** Masks the last octet of the IP address for privacy.
+*   **IP Masking:** Masks the last octet of the IP address for privacy (IPv4 and IPv6 supported).
 *   **Country Flag:** Converts country code to a flag emoji.
-*   **CLI:** Provides a CLI to either print the prompt or update the cache.
+*   **Animated Banner:** Displays an animated "It's Warp Time!" banner with customizable typewriter effects, colors, and timing.
+*   **CLI:** Provides a CLI to either print the prompt, update the cache, or display the banner.
 
 ## Key Commands
 
@@ -104,22 +105,45 @@ You can add the following to your shell's configuration file (e.g., `~/.bashrc`,
 export ABUSEIPDB_API_KEY="your_api_key"
 ```
 
+Optional `ip_config.json` overrides (deep-merged with defaults):
+
+```json
+{
+  "cache_expiry": 900,
+  "timeout": 2.0,
+  "max_retries": 2,
+  "abuseipdb_enabled": false,
+  "logging": {
+    "enabled": true,
+    "level": "INFO",
+    "log_file": "~/.cache/starship/ip_location.log"
+  },
+  "banner_animation": {
+    "enabled": true,
+    "char_delay": 0.001,
+    "line_delay": 0.05,
+    "colors": ["bright_blue", "cyan", "bright_cyan", "blue"]
+  }
+}
+```
+
 ## Usage
 
 Once installed, your prompt will be customized according to the `starship.toml` file. You can further customize the prompt by editing this file.
 
 ### `starship_manager.py` Usage
 
-The `starship_manager.py` script can be used to display dynamic information in the prompt. It has two commands:
+The `starship_manager.py` script can be used to display dynamic information in the prompt. It has three commands:
 
 *   `prompt`: Fetches and displays the prompt information.
 *   `update_cache`: Updates the cache with the latest information.
+*   `banner`: Displays the animated "It's Warp Time!" banner.
 
 To use the script, you can add the following to your `starship.toml` file:
 
 ```toml
-[custom.ip_location]
-command = "python /path/to/starship_manager.py prompt"
+[custom.location_status]
+command = "python /absolute/path/to/starship_manager.py prompt"
 when = "true"
 format = "$output"
 ```
@@ -129,6 +153,62 @@ You can also run the `update_cache` command periodically to keep the cache up to
 ```bash
 python /path/to/starship_manager.py update_cache
 ```
+
+### Animated Banner
+
+The script includes an animated banner feature that displays "It's Warp Time!" with customizable effects:
+
+```bash
+python /path/to/starship_manager.py banner
+```
+
+**Features:**
+*   **Typewriter Effect:** Characters appear one by one with customizable timing
+*   **Multi-color Support:** Each line can have different colors that cycle through
+*   **Pulse Effect:** Final pulsing border effect after animation completes
+*   **Graceful Fallbacks:** Works with or without rich library, with static fallback option
+
+**Banner Animation Configuration:**
+
+Add the following to your `ip_config.json` to customize the banner animation:
+
+```json
+{
+  "banner_animation": {
+    "enabled": true,              // Enable/disable animation
+    "char_delay": 0.001,          // Delay between characters (seconds)
+    "line_delay": 0.05,           // Delay between lines (seconds)
+    "colors": [                   // Colors cycle through each line
+      "bright_blue",
+      "cyan",
+      "bright_cyan",
+      "blue"
+    ]
+  }
+}
+```
+
+**Available Colors:** `black`, `red`, `green`, `yellow`, `blue`, `magenta`, `cyan`, `white`, `bright_black`, `bright_red`, `bright_green`, `bright_yellow`, `bright_blue`, `bright_magenta`, `bright_cyan`, `bright_white`
+
+## Performance
+
+*   **Concurrent lookups:** Public IP is fetched from multiple services in parallel.
+*   **Retries with backoff:** Transient network errors are retried with exponential backoff and jitter.
+*   **Aggressive timeouts:** Short per-call timeouts prevent prompt stalls.
+*   **Cache schema:** Local cache includes `schema_version` for safe invalidation on upgrades.
+
+## Privacy
+
+*   **IP masking:** IPv4/IPv6 are masked in the prompt output (last segment replaced).
+*   **Redacted logs:** Logs avoid writing raw IPs in error messages.
+*   **Optional AbuseIPDB:** You can disable checks by setting `"abuseipdb_enabled": false` in `ip_config.json`.
+
+## Troubleshooting
+
+*   **Firewall on macOS:** `pfctl -s info` may require permissions. If empty, run the prompt without that segment or enable the firewall.
+*   **NordVPN missing:** If `nordvpn` CLI is not installed, the VPN segment will show as unlocked.
+*   **Python path:** Ensure the `command` path in `starship.toml` is correct and executable.
+*   **Stale cache:** Delete `~/.cache/starship/prompt_data.json` if data seems outdated; it will be recreated.
 
 ## Contributing
 
