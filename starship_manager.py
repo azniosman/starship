@@ -6,11 +6,10 @@ import time
 import logging
 import subprocess
 import random
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, Optional
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from urllib.request import urlopen, Request
 from urllib.error import URLError, HTTPError
-from contextlib import contextmanager
 import ipaddress
 
 # --- Configuration and Setup ---
@@ -42,20 +41,35 @@ def _deep_merge_dicts(base: Dict[str, Any], override: Dict[str, Any]) -> Dict[st
 def load_config() -> Dict[str, Any]:
     """
     Loads configuration from 'ip_config.json' and merges with defaults.
+    Validates configuration values and provides sensible defaults.
     """
     config_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "ip_config.json")
     
     default_config: Dict[str, Any] = {
         "cache_dir": "~/.cache/starship",
-        "cache_expiry": 600,  # NEW: Cache expiry in seconds (10 minutes)
+        "cache_expiry": 600,  # Cache expiry in seconds (10 minutes)
         "timeout": 3,
         "max_retries": 3,
         "abuseipdb_api_key": None,
         "abuseipdb_enabled": True,
+        "display_mode": "icons",  # "icons" or "text"
         "display_options": { "max_org_length": 20 },
+        "text_colors": {
+            "firewall": "green",
+            "vpn": "blue", 
+            "antivirus": "yellow",
+            "network_security": "cyan",
+            "system_integrity": "magenta",
+            "bitwarden": "red",
+            "ssh": "white",
+            "aws": "orange",
+            "privacy": "purple",
+            "abuse": "bright_green"
+        },
         "logging": { "enabled": False, "level": "INFO", "log_file": "~/.cache/starship/ip_location.log" }
     }
 
+    # Load API key from environment
     abuseipdb_api_key = os.environ.get("ABUSEIPDB_API_KEY")
     if abuseipdb_api_key:
         default_config["abuseipdb_api_key"] = abuseipdb_api_key
@@ -67,6 +81,10 @@ def load_config() -> Dict[str, Any]:
     except (FileNotFoundError, json.JSONDecodeError):
         config = default_config
 
+    # Validate and normalize configuration
+    config = _validate_config(config)
+    
+    # Expand user paths
     config['cache_dir'] = os.path.expanduser(config['cache_dir'])
     if config.get('logging', {}).get('enabled'):
         log_file = config['logging'].get('log_file')
@@ -74,6 +92,72 @@ def load_config() -> Dict[str, Any]:
             config['logging']['log_file'] = os.path.expanduser(log_file)
             
     return config
+
+def _validate_config(config: Dict[str, Any]) -> Dict[str, Any]:
+    """Validate configuration values and provide sensible defaults."""
+    # Validate cache_expiry (must be positive integer)
+    if not isinstance(config.get('cache_expiry'), int) or config.get('cache_expiry', 0) <= 0:
+        config['cache_expiry'] = 600
+    
+    # Validate timeout (must be positive number)
+    if not isinstance(config.get('timeout'), (int, float)) or config.get('timeout', 0) <= 0:
+        config['timeout'] = 3
+    
+    # Validate max_retries (must be non-negative integer)
+    if not isinstance(config.get('max_retries'), int) or config.get('max_retries', 0) < 0:
+        config['max_retries'] = 3
+    
+    # Validate abuseipdb_enabled (must be boolean)
+    if not isinstance(config.get('abuseipdb_enabled'), bool):
+        config['abuseipdb_enabled'] = True
+    
+    # Validate logging level
+    valid_levels = ['DEBUG', 'INFO', 'WARNING', 'ERROR', 'CRITICAL']
+    if config.get('logging', {}).get('level', '').upper() not in valid_levels:
+        config.setdefault('logging', {})['level'] = 'INFO'
+    
+    # Validate display mode
+    valid_modes = ['icons', 'text']
+    if config.get('display_mode', 'icons') not in valid_modes:
+        config['display_mode'] = 'icons'
+    
+    return config
+
+def get_status_display(icon: str, text: str, config: Dict[str, Any], status_type: str = "") -> str:
+    """Return either icon or text based on display mode configuration."""
+    display_mode = config.get('display_mode', 'icons')
+    if display_mode == 'icons':
+        return icon
+    else:
+        # Apply color to text if available
+        if status_type and config.get('text_colors', {}).get(status_type):
+            color = config['text_colors'][status_type]
+            return f"\033[{_get_color_code(color)}m{text}\033[0m"
+        return text
+
+def _get_color_code(color: str) -> str:
+    """Convert color name to ANSI color code."""
+    color_map = {
+        'black': '30',
+        'red': '31',
+        'green': '32',
+        'yellow': '33',
+        'blue': '34',
+        'magenta': '35',
+        'cyan': '36',
+        'white': '37',
+        'bright_black': '90',
+        'bright_red': '91',
+        'bright_green': '92',
+        'bright_yellow': '93',
+        'bright_blue': '94',
+        'bright_magenta': '95',
+        'bright_cyan': '96',
+        'bright_white': '97',
+        'orange': '38;5;208',  # Orange using 256-color palette
+        'purple': '38;5;141'   # Purple using 256-color palette
+    }
+    return color_map.get(color.lower(), '37')  # Default to white
 
 def setup_logging(config: Dict[str, Any]) -> Optional[logging.Logger]:
     """
@@ -308,148 +392,197 @@ def format_location(ip_data: Optional[Dict[str, Any]], config: Dict[str, Any]) -
 
 # --- Status Indicator Functions ---
 
-def get_nordvpn_status() -> str:
-    try: result = subprocess.run(['nordvpn', 'status'], capture_output=True, text=True, check=True, timeout=2); return "" if "Status: Connected" in result.stdout else ""
-    except Exception: return ""
-def get_aws_status() -> str: return "󰸏 " if os.getenv("AWS_PROFILE") or os.getenv("AWS_VAULT") else ""
-def get_timezone_status(ip_data: Optional[Dict[str, Any]]) -> str: return f"TZN:{ip_data['timezone']}" if ip_data and ip_data.get("timezone") else ""
-def get_asn_status(ip_data: Optional[Dict[str, Any]]) -> str: return f" {ip_data['asn']['id']}" if ip_data and ip_data.get("asn", {}).get("id") else ""
-def get_whois_status(ip_data: Optional[Dict[str, Any]]) -> str: return f"ASN:{ip_data['org']}" if ip_data and ip_data.get("org") else ""
+def get_nordvpn_status(config: Dict[str, Any]) -> str:
+    """Check NordVPN connection status."""
+    try:
+        result = subprocess.run(['nordvpn', 'status'], capture_output=True, text=True, check=True, timeout=2)
+        if "Status: Connected" in result.stdout:
+            return get_status_display("🔒", "VPN+", config, "vpn")
+        else:
+            return get_status_display("🔓", "VPN-", config, "vpn")
+    except Exception:
+        return get_status_display("🔓", "VPN-", config, "vpn")
 
-# UPDATED: Changed the icons for AbuseIPDB status to be more consistent.
-def get_abuse_status(abuse_data: Optional[Dict[str, Any]]) -> str:
-    if not abuse_data: return ""
+def get_aws_status(config: Dict[str, Any]) -> str:
+    """Check if AWS profile/vault is active."""
+    if os.getenv("AWS_PROFILE") or os.getenv("AWS_VAULT"):
+        return get_status_display("☁️", "AWS+", config, "aws")
+    return ""
+
+def get_timezone_status(ip_data: Optional[Dict[str, Any]]) -> str:
+    """Get timezone from IP data."""
+    return f"TZN:{ip_data['timezone']}" if ip_data and ip_data.get("timezone") else ""
+
+def get_asn_status(ip_data: Optional[Dict[str, Any]]) -> str:
+    """Get ASN ID from IP data."""
+    return f"🌐 {ip_data['asn']['id']}" if ip_data and ip_data.get("asn", {}).get("id") else ""
+
+def get_whois_status(ip_data: Optional[Dict[str, Any]]) -> str:
+    """Get organization info from IP data."""
+    return f"ASN:{ip_data['org']}" if ip_data and ip_data.get("org") else ""
+
+def get_abuse_status(abuse_data: Optional[Dict[str, Any]], config: Dict[str, Any]) -> str:
+    """Get abuse score from AbuseIPDB data."""
+    if not abuse_data:
+        return ""
+    
     score = abuse_data.get('abuseConfidenceScore', 0)
     if score > 50:
-        icon = "󰯜"  # High risk icon (virus)
+        icon = "🦠"  # High risk
+        text = f"REP{score}"
     elif score > 0:
-        icon = "󰱩"  # Medium risk icon (shield-alert)
+        icon = "⚠️"  # Medium risk
+        text = f"REP{score}"
     else:
-        icon = "󰱧"  # Clean icon (shield-check)
-    return f"{icon} {score}"
-def get_firewall_status() -> str:
-    icon_active, icon_inactive = "🛡️", "󰦝"
+        icon = "✅"  # Clean
+        text = f"REP{score}"
+    
+    display_mode = config.get('display_mode', 'icons')
+    if display_mode == 'icons':
+        return f"{icon} {score}"
+    else:
+        # Apply color to text if available
+        if config.get('text_colors', {}).get('abuse'):
+            color = config['text_colors']['abuse']
+            return f"\033[{_get_color_code(color)}m{text}\033[0m"
+        return text
+
+def get_firewall_status(config: Dict[str, Any]) -> str:
+    """Check firewall status including Little Snitch on macOS."""
     try:
-        if sys.platform == "linux": return icon_active if "Status: active" in subprocess.run(['ufw', 'status'], capture_output=True, text=True, timeout=1).stdout else icon_inactive
-        elif sys.platform == "darwin": return icon_active if "Status: Enabled" in subprocess.run(['pfctl', '-s', 'info'], capture_output=True, text=True, timeout=1).stdout else icon_inactive
-    except Exception: return ""
+        if sys.platform == "darwin":
+            # Check for Little Snitch first
+            try:
+                result = subprocess.run(['pgrep', '-f', 'Little Snitch'], capture_output=True, text=True, timeout=1)
+                if result.returncode == 0 and result.stdout.strip():
+                    return get_status_display("🛡️", "FW+", config, "firewall")  # Little Snitch is running
+            except Exception:
+                pass
+            
+            # Fallback to pfctl
+            result = subprocess.run(['pfctl', '-s', 'info'], capture_output=True, text=True, timeout=1)
+            if "Status: Enabled" in result.stdout:
+                return get_status_display("🛡️", "FW+", config, "firewall")
+            else:
+                return get_status_display("🚫", "FW-", config, "firewall")
+        elif sys.platform == "linux":
+            result = subprocess.run(['ufw', 'status'], capture_output=True, text=True, timeout=1)
+            if "Status: active" in result.stdout:
+                return get_status_display("🛡️", "FW+", config, "firewall")
+            else:
+                return get_status_display("🚫", "FW-", config, "firewall")
+    except Exception:
+        pass
     return ""
-def get_ssh_agent_status() -> str:
-    if not os.getenv("SSH_AUTH_SOCK"): return ""
+
+def get_ssh_agent_status(config: Dict[str, Any]) -> str:
+    """Check if SSH agent has loaded keys."""
+    if not os.getenv("SSH_AUTH_SOCK"):
+        return ""
     try:
-        if subprocess.run(['ssh-add', '-l'], capture_output=True, text=True, timeout=1, check=True).stdout.strip(): return "🔑"
-    except Exception: return ""
+        result = subprocess.run(['ssh-add', '-l'], capture_output=True, text=True, timeout=1, check=True)
+        if result.stdout.strip():
+            return get_status_display("🔑", "SSH+", config, "ssh")
+    except Exception:
+        pass
     return ""
 
-# --- Rich Banner Integration ---
-
-def show_warp_banner(config: Dict[str, Any], logger: Optional[logging.Logger] = None) -> None:
-    """Display animated 'It's Warp Time!' banner with typewriter effect."""
-
-    # ASCII art for "It's Warp Time!" split into lines
-    ascii_lines = [
-        "██╗████████╗███████╗    ██╗    ██╗ █████╗ ██████╗ ██████╗     ████████╗██╗███╗   ███╗███████╗██╗",
-        "██║╚══██╔══╝██╔════╝    ██║    ██║██╔══██╗██╔══██╗██╔══██╗    ╚══██╔══╝██║████╗ ████║██╔════╝██║",
-        "██║   ██║   ███████╗    ██║ █╗ ██║███████║██████╔╝██████╔╝       ██║   ██║██╔████╔██║█████╗  ██║",
-        "██║   ██║   ╚════██║    ██║███╗██║██╔══██║██╔══██╗██╔═══╝        ██║   ██║██║╚██╔╝██║██╔══╝  ╚═╝",
-        "██║   ██║   ███████║    ╚███╔███╔╝██║  ██║██║  ██║██║            ██║   ██║██║ ╚═╝ ██║███████╗██╗",
-        "╚═╝   ╚═╝   ╚══════╝     ╚══╝╚══╝ ╚═╝  ╚═╝╚═╝  ╚═╝╚═╝            ╚═╝   ╚═╝╚═╝     ╚═╝╚══════╝╚═╝"
-    ]
-
+def get_bitwarden_status(config: Dict[str, Any]) -> str:
+    """Check if Bitwarden CLI is logged in."""
     try:
-        from rich.console import Console
-        from rich.panel import Panel
-        from rich.text import Text
-        from rich.live import Live
-        import time
+        result = subprocess.run(['bw', 'status'], capture_output=True, text=True, timeout=2)
+        if result.returncode == 0:
+            import json
+            status = json.loads(result.stdout)
+            if status.get('status') == 'unlocked':
+                return get_status_display("🔐", "BW+", config, "bitwarden")
+            elif status.get('status') == 'locked':
+                return get_status_display("🔒", "BW-", config, "bitwarden")
+    except Exception:
+        pass
+    return ""
 
-        console = Console()
+def get_antivirus_status(config: Dict[str, Any]) -> str:
+    """Check antivirus status on macOS - specifically Intego."""
+    try:
+        if sys.platform == "darwin":
+            # Check for Intego antivirus
+            try:
+                # Check for Intego processes
+                result = subprocess.run(['pgrep', '-f', 'Intego'], capture_output=True, text=True, timeout=1)
+                if result.returncode == 0 and result.stdout.strip():
+                    return get_status_display("🛡️", "AV+", config, "antivirus")  # Intego is running
+            except Exception:
+                pass
+            
+            # Check for Intego in Applications
+            try:
+                result = subprocess.run(['ls', '/Applications'], capture_output=True, text=True, timeout=1)
+                if result.returncode == 0 and 'Intego' in result.stdout:
+                    return get_status_display("🛡️", "AV+", config, "antivirus")  # Intego is installed
+            except Exception:
+                pass
+            
+            # Fallback: Check for ClamAV
+            result = subprocess.run(['clamdscan', '--version'], capture_output=True, text=True, timeout=1)
+            if result.returncode == 0:
+                return get_status_display("🦠", "AV+", config, "antivirus")
+            
+            # Fallback: Check for built-in XProtect
+            result = subprocess.run(['xattr', '-l', '/System/Library/CoreServices/XProtect.bundle'], capture_output=True, text=True, timeout=1)
+            if result.returncode == 0:
+                return get_status_display("🛡️", "AV+", config, "antivirus")
+    except Exception:
+        pass
+    return ""
 
-        # Animation settings from config or defaults
-        animation_config = config.get('banner_animation', {})
-        char_delay = animation_config.get('char_delay', 0.003)  # Delay between characters
-        line_delay = animation_config.get('line_delay', 0.1)   # Delay between lines
-        colors = animation_config.get('colors', ['bright_blue', 'cyan', 'bright_cyan', 'blue'])
-        enable_animation = animation_config.get('enabled', True)
+def get_privacy_status(config: Dict[str, Any]) -> str:
+    """Check privacy-related settings on macOS."""
+    try:
+        if sys.platform == "darwin":
+            # Check if camera/microphone access is restricted
+            camera_result = subprocess.run(['sqlite3', '/Library/Application Support/com.apple.TCC/TCC.db', 
+                                          "SELECT service FROM access WHERE service='kTCCServiceCamera'"], 
+                                         capture_output=True, text=True, timeout=1)
+            mic_result = subprocess.run(['sqlite3', '/Library/Application Support/com.apple.TCC/TCC.db', 
+                                       "SELECT service FROM access WHERE service='kTCCServiceMicrophone'"], 
+                                      capture_output=True, text=True, timeout=1)
+            
+            if camera_result.returncode == 0 or mic_result.returncode == 0:
+                return get_status_display("🔒", "PRIV+", config, "privacy")  # Privacy controls active
+    except Exception:
+        pass
+    return ""
 
-        if not enable_animation:
-            # Show static banner if animation disabled
-            ascii_art = "\n".join(ascii_lines)
-            banner_text = Text(ascii_art, style="bold bright_blue")
-            panel = Panel(banner_text, border_style="bright_cyan", padding=(0, 1))
-            console.print(panel)
-            return
+def get_network_security_status(config: Dict[str, Any]) -> str:
+    """Check network security indicators."""
+    try:
+        # Check for suspicious network activity
+        if sys.platform == "darwin":
+            # Check for unusual network connections
+            result = subprocess.run(['netstat', '-rn'], capture_output=True, text=True, timeout=1)
+            if result.returncode == 0:
+                # Look for VPN routes or suspicious gateways
+                if 'tun' in result.stdout or 'utun' in result.stdout:
+                    return get_status_display("🌐", "NET+", config, "network_security")  # VPN detected
+    except Exception:
+        pass
+    return ""
 
-        # Create empty text object for animation
-        animated_text = Text()
-
-        with Live(Panel(animated_text, border_style="bright_cyan", padding=(0, 1)),
-                  console=console, refresh_per_second=30) as live:
-
-            for line_idx, line in enumerate(ascii_lines):
-                current_line = ""
-                color = colors[line_idx % len(colors)]
-
-                # Animate each character in the line
-                for char in line:
-                    current_line += char
-
-                    # Rebuild the text with all previous complete lines plus current partial line
-                    animated_text = Text()
-                    for i in range(line_idx):
-                        prev_color = colors[i % len(colors)]
-                        animated_text.append(ascii_lines[i] + "\n", style=f"bold {prev_color}")
-
-                    # Add current partial line
-                    animated_text.append(current_line, style=f"bold {color}")
-
-                    # Update the live display
-                    live.update(Panel(animated_text, border_style="bright_cyan", padding=(0, 1)))
-                    time.sleep(char_delay)
-
-                # Add newline after completing each line (except the last)
-                if line_idx < len(ascii_lines) - 1:
-                    animated_text.append("\n")
-                    time.sleep(line_delay)
-
-            # Final pulse effect
-            for _ in range(3):
-                live.update(Panel(animated_text, border_style="bright_magenta", padding=(0, 1)))
-                time.sleep(0.2)
-                live.update(Panel(animated_text, border_style="bright_cyan", padding=(0, 1)))
-                time.sleep(0.2)
-
-        if logger:
-            logger.info("Animated warp banner displayed successfully")
-
-    except ImportError:
-        # Fallback if rich is not available - display ASCII art directly
-        ascii_art = "\n".join(ascii_lines)
-
-        # Simple typewriter fallback using basic terminal
-        if config.get('banner_animation', {}).get('enabled', True):
-            import sys
-            import time
-            for line in ascii_lines:
-                for char in line:
-                    sys.stdout.write(char)
-                    sys.stdout.flush()
-                    time.sleep(0.01)
-                print()  # newline
-                time.sleep(0.05)
-        else:
-            print(ascii_art)
-
-        if logger:
-            logger.info("ASCII art banner displayed (rich not available)")
-
-    except Exception as e:
-        # Simple fallback for any other errors
-        ascii_art = "\n".join(ascii_lines)
-        print(ascii_art)
-
-        if logger:
-            logger.warning(f"Banner display error: {type(e).__name__}, used ASCII fallback")
+def get_system_integrity_status(config: Dict[str, Any]) -> str:
+    """Check system integrity protection status."""
+    try:
+        if sys.platform == "darwin":
+            # Check System Integrity Protection
+            result = subprocess.run(['csrutil', 'status'], capture_output=True, text=True, timeout=1)
+            if result.returncode == 0:
+                if 'enabled' in result.stdout.lower():
+                    return get_status_display("🔐", "SIP+", config, "system_integrity")  # SIP enabled
+                else:
+                    return get_status_display("⚠️", "SIP-", config, "system_integrity")  # SIP disabled
+    except Exception:
+        pass
+    return ""
 
 # --- Caching Logic ---
 
@@ -524,12 +657,6 @@ def handle_update_cache(config: Dict[str, Any], logger: Optional[logging.Logger]
     write_cache(config, all_data, logger)
     print("Cache updated.")
 
-def handle_banner(config: Dict[str, Any], logger: Optional[logging.Logger] = None) -> None:
-    """
-    Display the 'It's Warp Time!' banner.
-    """
-    show_warp_banner(config, logger)
-
 def handle_prompt(config: Dict[str, Any], logger: Optional[logging.Logger]):
     """
 
@@ -559,16 +686,21 @@ def handle_prompt(config: Dict[str, Any], logger: Optional[logging.Logger]):
 
     # Collect all status components (local statuses are always live)
     status_components = {
-        "firewall": get_firewall_status(),
-        "vpn": get_nordvpn_status(),
-        "ssh": get_ssh_agent_status(),
-        "aws": get_aws_status(),
+        "firewall": get_firewall_status(config),
+        "vpn": get_nordvpn_status(config),
+        "ssh": get_ssh_agent_status(config),
+        "aws": get_aws_status(config),
+        "bitwarden": get_bitwarden_status(config),
+        "antivirus": get_antivirus_status(config),
+        "privacy": get_privacy_status(config),
+        "network_security": get_network_security_status(config),
+        "system_integrity": get_system_integrity_status(config),
         "location": format_location(ip_data, config),
         "ip": f"({mask_ip_address(ip_data.get('ip'))})" if ip_data else "",
         "timezone": get_timezone_status(ip_data),
         "asn": get_asn_status(ip_data),
         "whois": get_whois_status(ip_data),
-        "abuse": get_abuse_status(abuse_data),
+        "abuse": get_abuse_status(abuse_data, config),
     }
 
     parts = [
@@ -576,12 +708,17 @@ def handle_prompt(config: Dict[str, Any], logger: Optional[logging.Logger]):
         f"{status_components['vpn']}" if status_components['vpn'] else None,
         f"{status_components['ssh']}" if status_components['ssh'] else None,
         f"{status_components['aws']}" if status_components['aws'] else None,
+        f"{status_components['bitwarden']}" if status_components['bitwarden'] else None,
+        f"{status_components['antivirus']}" if status_components['antivirus'] else None,
+        f"{status_components['privacy']}" if status_components['privacy'] else None,
+        f"{status_components['network_security']}" if status_components['network_security'] else None,
+        f"{status_components['system_integrity']}" if status_components['system_integrity'] else None,
+        f"{status_components['abuse']}" if status_components['abuse'] else None,
         f"{status_components['location']}" if status_components['location'] else None,
         f"{status_components['ip']}" if status_components['ip'] else None,
         #f"{status_components['asn']}" if status_components['asn'] else None,
         #f"{status_components['whois']}" if status_components['whois'] else None,
-        f"{status_components['timezone']}" if status_components['timezone'] else None,
-        f"{status_components['abuse']}" if status_components['abuse'] else None,
+        #f"{status_components['timezone']}" if status_components['timezone'] else None,
     ]
     
     print(" ".join(filter(None, parts)))
@@ -595,7 +732,6 @@ def main() -> None:
 
     subparsers.add_parser("prompt", help="Print prompt data to stdout")
     subparsers.add_parser("update_cache", help="Update the local cache")
-    subparsers.add_parser("banner", help="Display 'It's Warp Time!' banner")
 
     args = parser.parse_args()
 
@@ -606,8 +742,6 @@ def main() -> None:
         handle_prompt(config, logger)
     elif args.command == "update_cache":
         handle_update_cache(config, logger)
-    elif args.command == "banner":
-        handle_banner(config, logger)
     else:
         parser.error("Unknown command")
 

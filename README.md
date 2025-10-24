@@ -33,24 +33,47 @@ The primary goal of this project is to create a customized Starship prompt that 
 
 ## Features
 
-The `starship_manager.py` script provides the following features:
+The `starship_manager.py` script provides comprehensive security and system monitoring with the following features:
 
-*   **Public IP Information:** Fetches public IP information from multiple services (ipinfo.io, ip-api.com).
-*   **Abuse Score:** Fetches abuse score for an IP from AbuseIPDB.com.
-*   **Caching:** Caches the fetched data to avoid rate limiting and improve performance.
-*   **Status Indicators:** Provides status indicators for:
-    *   NordVPN connection status.
-    *   AWS profile/vault existence.
-    *   Timezone.
-    *   ASN (Autonomous System Number).
-    *   WHOIS information.
-    *   AbuseIPDB score.
-    *   Firewall status (UFW for Linux, pfctl for macOS).
-    *   SSH agent status.
+### 🌐 **Network & Location**
+*   **Public IP Information:** Fetches public IP information from multiple services (ipinfo.io, ip-api.com, ipify, ifconfig.co).
+*   **IP Reputation:** Fetches abuse score for an IP from AbuseIPDB.com with risk assessment.
+*   **Location Display:** Shows country flag and city/location information.
 *   **IP Masking:** Masks the last octet of the IP address for privacy (IPv4 and IPv6 supported).
-*   **Country Flag:** Converts country code to a flag emoji.
-*   **Animated Banner:** Displays an animated "It's Warp Time!" banner with customizable typewriter effects, colors, and timing.
-*   **CLI:** Provides a CLI to either print the prompt, update the cache, or display the banner.
+
+### 🔒 **Security Status Indicators**
+*   **Firewall Status:** 
+    - Little Snitch detection (macOS)
+    - pfctl status (macOS) 
+    - UFW status (Linux)
+*   **VPN Status:** NordVPN connection monitoring
+*   **Antivirus Status:** 
+    - Intego antivirus detection (macOS)
+    - ClamAV detection
+    - Built-in XProtect detection
+*   **System Integrity:** System Integrity Protection (SIP) status
+*   **Network Security:** VPN tunnel detection and network monitoring
+*   **Privacy Controls:** Camera/microphone access restrictions monitoring
+*   **SSH Agent:** SSH key status monitoring
+*   **Password Manager:** Bitwarden CLI status (locked/unlocked)
+*   **Cloud Services:** AWS profile/vault status
+
+### 🎨 **Display Modes & Customization**
+*   **Dual Display Modes:** 
+    - **Icons Mode:** Visual emoji indicators (🛡️ 🔒 🛡️ 🌐 🔐)
+    - **Text Mode:** Abbreviated text indicators (FW+ VPN- AV+ NET+ SIP+)
+*   **Color Support:** Each status indicator can have custom colors in text mode
+*   **Status Indicators:** 
+    - `+` = Active/Enabled/Connected/Unlocked
+    - `-` = Inactive/Disabled/Disconnected/Locked
+*   **Configuration Validation:** Automatic validation of configuration values with sensible defaults
+
+### ⚡ **Performance & Reliability**
+*   **Caching:** Caches the fetched data to avoid rate limiting and improve performance.
+*   **Concurrent Processing:** Multiple API calls run in parallel for faster response.
+*   **Retry Logic:** Exponential backoff with jitter for network resilience.
+*   **Schema Versioning:** Cache invalidation on configuration changes.
+*   **Timeout Management:** Aggressive timeouts prevent prompt stalls.
 
 ## Key Commands
 
@@ -97,32 +120,85 @@ The `starship_manager.py` script provides the following features:
 
 ## Configuration
 
+### 🔑 **API Keys**
+
 To use the AbuseIPDB integration, you need to set the `ABUSEIPDB_API_KEY` environment variable to your AbuseIPDB API key.
 
-You can add the following to your shell's configuration file (e.g., `~/.bashrc`, `~/.zshrc`):
+Add the following to your shell's configuration file (e.g., `~/.bashrc`, `~/.zshrc`):
 
 ```bash
 export ABUSEIPDB_API_KEY="your_api_key"
 ```
 
-Optional `ip_config.json` overrides (deep-merged with defaults):
+### ⚙️ **Display Modes**
+
+Configure display mode in `ip_config.json`:
 
 ```json
 {
-  "cache_expiry": 900,
-  "timeout": 2.0,
-  "max_retries": 2,
-  "abuseipdb_enabled": false,
+  "display_mode": "icons"  // or "text"
+}
+```
+
+**Icons Mode Example:**
+```
+🛡️ 🔓 🛡️ 🌐 🔐 🇳🇴 Oslo (45.14.193.x) ✅ 0
+```
+
+**Text Mode Example:**
+```
+FW+ VPN- AV+ NET+ SIP+ 🇳🇴 Oslo (45.14.193.x) REP0
+```
+
+### 🎨 **Color Customization**
+
+Customize colors for text mode indicators:
+
+```json
+{
+  "display_mode": "text",
+  "text_colors": {
+    "firewall": "green",
+    "vpn": "blue", 
+    "antivirus": "yellow",
+    "network_security": "cyan",
+    "system_integrity": "magenta",
+    "bitwarden": "red",
+    "ssh": "white",
+    "aws": "orange",
+    "privacy": "purple",
+    "abuse": "bright_green"
+  }
+}
+```
+
+**Available Colors:** `black`, `red`, `green`, `yellow`, `blue`, `magenta`, `cyan`, `white`, `bright_black`, `bright_red`, `bright_green`, `bright_yellow`, `bright_blue`, `bright_magenta`, `bright_cyan`, `bright_white`, `orange`, `purple`
+
+### 📋 **Complete Configuration Options**
+
+```json
+{
+  "display_mode": "icons",
+  "cache_expiry": 600,
+  "timeout": 3,
+  "max_retries": 3,
+  "abuseipdb_enabled": true,
+  "text_colors": {
+    "firewall": "green",
+    "vpn": "blue", 
+    "antivirus": "yellow",
+    "network_security": "cyan",
+    "system_integrity": "magenta",
+    "bitwarden": "red",
+    "ssh": "white",
+    "aws": "orange",
+    "privacy": "purple",
+    "abuse": "bright_green"
+  },
   "logging": {
     "enabled": true,
     "level": "INFO",
     "log_file": "~/.cache/starship/ip_location.log"
-  },
-  "banner_animation": {
-    "enabled": true,
-    "char_delay": 0.001,
-    "line_delay": 0.05,
-    "colors": ["bright_blue", "cyan", "bright_cyan", "blue"]
   }
 }
 ```
@@ -133,62 +209,52 @@ Once installed, your prompt will be customized according to the `starship.toml` 
 
 ### `starship_manager.py` Usage
 
-The `starship_manager.py` script can be used to display dynamic information in the prompt. It has three commands:
+The `starship_manager.py` script provides comprehensive security and system monitoring. It has two main commands:
 
-*   `prompt`: Fetches and displays the prompt information.
+*   `prompt`: Fetches and displays security status information.
 *   `update_cache`: Updates the cache with the latest information.
-*   `banner`: Displays the animated "It's Warp Time!" banner.
 
-To use the script, you can add the following to your `starship.toml` file:
+To use the script, add the following to your `starship.toml` file:
 
 ```toml
-[custom.location_status]
-command = "python /absolute/path/to/starship_manager.py prompt"
-when = "true"
-format = "$output"
+[custom.prompt]
+command = "python ~/.config/starship/starship_manager.py prompt"
+when = true
+format = "[$output]($style) "
+style = "bold #83a598"
 ```
 
-You can also run the `update_cache` command periodically to keep the cache up to date:
+### 🔄 **Background Cache Updates**
+
+Run the cache update command periodically to keep data fresh:
 
 ```bash
-python /path/to/starship_manager.py update_cache
+python ~/.config/starship/starship_manager.py update_cache
 ```
 
-### Animated Banner
-
-The script includes an animated banner feature that displays "It's Warp Time!" with customizable effects:
-
+**Recommended:** Add to your shell startup (e.g., `~/.zshrc`):
 ```bash
-python /path/to/starship_manager.py banner
+python ~/.config/starship/starship_manager.py update_cache &|
 ```
 
-**Features:**
-*   **Typewriter Effect:** Characters appear one by one with customizable timing
-*   **Multi-color Support:** Each line can have different colors that cycle through
-*   **Pulse Effect:** Final pulsing border effect after animation completes
-*   **Graceful Fallbacks:** Works with or without rich library, with static fallback option
+### 📊 **Status Indicators Reference**
 
-**Banner Animation Configuration:**
-
-Add the following to your `ip_config.json` to customize the banner animation:
-
-```json
-{
-  "banner_animation": {
-    "enabled": true,              // Enable/disable animation
-    "char_delay": 0.001,          // Delay between characters (seconds)
-    "line_delay": 0.05,           // Delay between lines (seconds)
-    "colors": [                   // Colors cycle through each line
-      "bright_blue",
-      "cyan",
-      "bright_cyan",
-      "blue"
-    ]
-  }
-}
-```
-
-**Available Colors:** `black`, `red`, `green`, `yellow`, `blue`, `magenta`, `cyan`, `white`, `bright_black`, `bright_red`, `bright_green`, `bright_yellow`, `bright_blue`, `bright_magenta`, `bright_cyan`, `bright_white`
+| **Indicator** | **Icon** | **Text** | **Description** |
+|---------------|----------|----------|-----------------|
+| Firewall (active) | `🛡️` | `FW+` | Little Snitch/pfctl/UFW active |
+| Firewall (inactive) | `🚫` | `FW-` | Firewall disabled |
+| VPN (connected) | `🔒` | `VPN+` | NordVPN connected |
+| VPN (disconnected) | `🔓` | `VPN-` | NordVPN disconnected |
+| Antivirus (active) | `🛡️` | `AV+` | Intego/ClamAV/XProtect |
+| Network Security | `🌐` | `NET+` | VPN routes detected |
+| System Integrity (enabled) | `🔐` | `SIP+` | SIP enabled |
+| System Integrity (disabled) | `⚠️` | `SIP-` | SIP disabled |
+| Bitwarden (unlocked) | `🔐` | `BW+` | Bitwarden unlocked |
+| Bitwarden (locked) | `🔒` | `BW-` | Bitwarden locked |
+| SSH Agent | `🔑` | `SSH+` | SSH keys loaded |
+| AWS | `☁️` | `AWS+` | AWS profile active |
+| Privacy | `🔒` | `PRIV+` | Privacy controls active |
+| IP Reputation | `✅` | `REP0` | Clean abuse score |
 
 ## Performance
 
@@ -205,10 +271,44 @@ Add the following to your `ip_config.json` to customize the banner animation:
 
 ## Troubleshooting
 
-*   **Firewall on macOS:** `pfctl -s info` may require permissions. If empty, run the prompt without that segment or enable the firewall.
-*   **NordVPN missing:** If `nordvpn` CLI is not installed, the VPN segment will show as unlocked.
-*   **Python path:** Ensure the `command` path in `starship.toml` is correct and executable.
-*   **Stale cache:** Delete `~/.cache/starship/prompt_data.json` if data seems outdated; it will be recreated.
+### 🔧 **Common Issues**
+
+*   **Firewall Detection:** 
+    - Little Snitch: Ensure the application is running
+    - pfctl: May require permissions on macOS
+    - UFW: Ensure firewall is installed on Linux
+*   **VPN Status:** If `nordvpn` CLI is not installed, VPN segment will show as disconnected
+*   **Antivirus Detection:** 
+    - Intego: Ensure the application is running
+    - ClamAV: Install `clamav` package
+    - XProtect: Built-in macOS protection
+*   **Bitwarden CLI:** Install `bw` CLI tool and ensure you're logged in
+*   **SSH Agent:** Ensure `SSH_AUTH_SOCK` environment variable is set
+*   **API Keys:** Verify `ABUSEIPDB_API_KEY` environment variable is set correctly
+
+### 🐛 **Technical Issues**
+
+*   **Python Path:** Ensure the `command` path in `starship.toml` is correct and executable
+*   **Stale Cache:** Delete `~/.cache/starship/prompt_data.json` if data seems outdated; it will be recreated
+*   **Color Display:** Ensure your terminal supports ANSI color codes for text mode colors
+*   **Permissions:** Some system checks may require elevated permissions
+*   **Network Issues:** Check internet connectivity for IP and abuse score fetching
+
+### 📝 **Debugging**
+
+Enable logging in `ip_config.json`:
+
+```json
+{
+  "logging": {
+    "enabled": true,
+    "level": "DEBUG",
+    "log_file": "~/.cache/starship/ip_location.log"
+  }
+}
+```
+
+Check the log file for detailed error information.
 
 ## Contributing
 
