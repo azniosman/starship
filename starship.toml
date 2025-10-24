@@ -121,8 +121,8 @@ modified = "📝 ×${count} "
 staged = "🗃️  ×${count} "
 renamed = "📛 ×${count} "
 deleted = "🗑️  ×${count} "
-style = "fg:#fbf1c7"
-format = "$all_status$ahead_behind"
+style = "fg:#fbf1c7 bg:#689d6a"
+format = "[$all_status$ahead_behind](fg:#fbf1c7 bg:#689d6a)"
 
 [nodejs]
 symbol = ""

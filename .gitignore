@@ -1,9 +1,27 @@
-# Python
-__pycache__/
-*.pyc
-
-# macOS
-.DS_Store
-
 # Local config
 ip_config.json
+
+# Don't commit environment-specific cache
+.cursor/history/
+.cursor/embeddings/
+
+# Don't commit sensitive local configs
+.env
+.env.local
+secrets/
+
+# IDE cache
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# Python cache
+__pycache__/
+*.pyc
+.pytest_cache/
+.mypy_cache/
+
+# OS files
+.DS_Store
+Thumbs.db
