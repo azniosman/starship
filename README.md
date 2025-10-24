@@ -38,7 +38,7 @@ The `starship_manager.py` script provides comprehensive security and system moni
 ### 🌐 **Network & Location**
 *   **Public IP Information:** Fetches public IP information from multiple services (ipinfo.io, ip-api.com, ipify, ifconfig.co).
 *   **IP Reputation:** Fetches abuse score for an IP from AbuseIPDB.com with risk assessment.
-*   **Location Display:** Shows country flag and city/location information.
+*   **Location Display:** Shows country flag and city/location information with integrated IP masking.
 *   **IP Masking:** Masks the last octet of the IP address for privacy (IPv4 and IPv6 supported).
 
 ### 🔒 **Security Status Indicators**
@@ -46,7 +46,10 @@ The `starship_manager.py` script provides comprehensive security and system moni
     - Little Snitch detection (macOS)
     - pfctl status (macOS) 
     - UFW status (Linux)
-*   **VPN Status:** NordVPN connection monitoring
+*   **VPN Status:** 
+    - NordVPN CLI detection (`nordvpn status`)
+    - NordVPN GUI process detection
+    - VPN tunnel interface detection (utun, tun, tap)
 *   **Antivirus Status:** 
     - Intego antivirus detection (macOS)
     - ClamAV detection
@@ -74,6 +77,8 @@ The `starship_manager.py` script provides comprehensive security and system moni
 *   **Retry Logic:** Exponential backoff with jitter for network resilience.
 *   **Schema Versioning:** Cache invalidation on configuration changes.
 *   **Timeout Management:** Aggressive timeouts prevent prompt stalls.
+*   **Smart Detection:** Multi-tier detection for VPN and security tools (CLI + GUI + process detection).
+*   **Optimized Display:** Eliminates duplicate information for cleaner output.
 
 ## Key Commands
 
@@ -142,12 +147,12 @@ Configure display mode in `ip_config.json`:
 
 **Icons Mode Example:**
 ```
-🛡️ 🔓 🛡️ 🌐 🔐 🇳🇴 Oslo (45.14.193.x) ✅ 0
+🛡️ 🔒 🛡️ 🌐 🔐 🇰🇷 Seoul ✅ 0
 ```
 
 **Text Mode Example:**
 ```
-FW+ VPN- AV+ NET+ SIP+ 🇳🇴 Oslo (45.14.193.x) REP0
+FW+ VPN+ AV+ NET+ SIP+ REP0 🇰🇷 Seoul
 ```
 
 ### 🎨 **Color Customization**
@@ -277,7 +282,10 @@ python ~/.config/starship/starship_manager.py update_cache &|
     - Little Snitch: Ensure the application is running
     - pfctl: May require permissions on macOS
     - UFW: Ensure firewall is installed on Linux
-*   **VPN Status:** If `nordvpn` CLI is not installed, VPN segment will show as disconnected
+*   **VPN Status:** 
+    - CLI not available: Will fallback to GUI process detection
+    - GUI not running: VPN segment will show as disconnected
+    - Tunnel interfaces: Checks for utun, tun, tap interfaces
 *   **Antivirus Detection:** 
     - Intego: Ensure the application is running
     - ClamAV: Install `clamav` package

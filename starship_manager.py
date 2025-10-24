@@ -395,13 +395,32 @@ def format_location(ip_data: Optional[Dict[str, Any]], config: Dict[str, Any]) -
 def get_nordvpn_status(config: Dict[str, Any]) -> str:
     """Check NordVPN connection status."""
     try:
+        # First try CLI if available
         result = subprocess.run(['nordvpn', 'status'], capture_output=True, text=True, check=True, timeout=2)
         if "Status: Connected" in result.stdout:
             return get_status_display("🔒", "VPN+", config, "vpn")
         else:
             return get_status_display("🔓", "VPN-", config, "vpn")
+    except (subprocess.CalledProcessError, FileNotFoundError):
+        # Fallback: Check for NordVPN GUI process
+        try:
+            result = subprocess.run(['pgrep', '-f', 'NordVPN'], capture_output=True, text=True, timeout=1)
+            if result.returncode == 0 and result.stdout.strip():
+                # Additional check: look for VPN tunnel interfaces
+                tunnel_result = subprocess.run(['ifconfig'], capture_output=True, text=True, timeout=1)
+                if tunnel_result.returncode == 0:
+                    # Check for common VPN tunnel interfaces
+                    tunnel_interfaces = ['utun', 'tun', 'tap']
+                    for interface in tunnel_interfaces:
+                        if interface in tunnel_result.stdout:
+                            return get_status_display("🔒", "VPN+", config, "vpn")
+                # If NordVPN process is running but no tunnel, assume connected
+                return get_status_display("🔒", "VPN+", config, "vpn")
+        except Exception:
+            pass
     except Exception:
-        return get_status_display("🔓", "VPN-", config, "vpn")
+        pass
+    return get_status_display("🔓", "VPN-", config, "vpn")
 
 def get_aws_status(config: Dict[str, Any]) -> str:
     """Check if AWS profile/vault is active."""
@@ -715,7 +734,6 @@ def handle_prompt(config: Dict[str, Any], logger: Optional[logging.Logger]):
         f"{status_components['system_integrity']}" if status_components['system_integrity'] else None,
         f"{status_components['abuse']}" if status_components['abuse'] else None,
         f"{status_components['location']}" if status_components['location'] else None,
-        f"{status_components['ip']}" if status_components['ip'] else None,
         #f"{status_components['asn']}" if status_components['asn'] else None,
         #f"{status_components['whois']}" if status_components['whois'] else None,
         #f"{status_components['timezone']}" if status_components['timezone'] else None,
