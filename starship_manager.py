@@ -376,8 +376,8 @@ def country_to_flag(country_code: Optional[str]) -> str:
     except (ValueError, OverflowError):
         return "🌐"
 
-def format_location(ip_data: Optional[Dict[str, Any]], config: Dict[str, Any]) -> str:
-    """Formats the IP location data into a compact string."""
+def format_location(ip_data: Optional[Dict[str, Any]], config: Dict[str, Any], vpn_status: str = "") -> str:
+    """Formats the IP location data into a compact string with VPN-aware flag display."""
     if not ip_data or not isinstance(ip_data, dict):
         return "🔌 offline"
 
@@ -386,9 +386,18 @@ def format_location(ip_data: Optional[Dict[str, Any]], config: Dict[str, Any]) -
     country = ip_data.get('country')
     masked_ip = mask_ip_address(ip_data.get('ip'))
 
+    # Determine if VPN is active based on vpn_status
+    vpn_active = "VPN+" in vpn_status or "🔒" in vpn_status
+    
     # Prefer city, then country, then masked IP
     location = city or country or masked_ip or 'unknown'
-    return f"{flag} {location}"
+    
+    if vpn_active:
+        # When VPN is active, show VPN exit location
+        return f"{flag} {location}"
+    else:
+        # When not on VPN, show local location
+        return f"{flag} {location}"
 
 # --- Status Indicator Functions ---
 
@@ -703,10 +712,13 @@ def handle_prompt(config: Dict[str, Any], logger: Optional[logging.Logger]):
         ip_data = cached_data.get("ip_data")
         abuse_data = cached_data.get("abuse_data")
 
+    # Get VPN status first for location formatting
+    vpn_status = get_nordvpn_status(config)
+    
     # Collect all status components (local statuses are always live)
     status_components = {
         "firewall": get_firewall_status(config),
-        "vpn": get_nordvpn_status(config),
+        "vpn": vpn_status,
         "ssh": get_ssh_agent_status(config),
         "aws": get_aws_status(config),
         "bitwarden": get_bitwarden_status(config),
@@ -714,7 +726,7 @@ def handle_prompt(config: Dict[str, Any], logger: Optional[logging.Logger]):
         "privacy": get_privacy_status(config),
         "network_security": get_network_security_status(config),
         "system_integrity": get_system_integrity_status(config),
-        "location": format_location(ip_data, config),
+        "location": format_location(ip_data, config, vpn_status),
         "ip": f"({mask_ip_address(ip_data.get('ip'))})" if ip_data else "",
         "timezone": get_timezone_status(ip_data),
         "asn": get_asn_status(ip_data),
