@@ -1,4 +1,11 @@
 #!/usr/bin/env python3
+"""
+Starship Prompt Manager
+
+A comprehensive security and system status monitoring tool for the Starship prompt.
+Provides real-time information about firewall, VPN, antivirus, and other security tools.
+"""
+
 import json
 import os
 import sys
@@ -12,12 +19,39 @@ from urllib.request import urlopen, Request
 from urllib.error import URLError, HTTPError
 import ipaddress
 
+# Import our custom modules
+from starship_constants import (
+    ConfigDefaults, StatusIcons, IPServices, 
+    PlatformDetector, RetryConfig, ValidationRules
+)
+from starship_platform import PlatformSecurityChecker
+from starship_network import IPFetcher, AbuseIPDBClient, NetworkStatusChecker
+
 # --- Configuration and Setup ---
 
-SCHEMA_VERSION = 1
+SCHEMA_VERSION = ConfigDefaults.SCHEMA_VERSION
 
 def _is_valid_ip(ip_str: str) -> bool:
-    """Validate if string is a valid IP address."""
+    """
+    Validate if a string represents a valid IP address.
+    
+    Supports both IPv4 and IPv6 address formats. Uses the ipaddress module
+    for robust validation.
+    
+    Args:
+        ip_str: String to validate as an IP address
+        
+    Returns:
+        True if the string is a valid IP address, False otherwise
+        
+    Examples:
+        >>> _is_valid_ip("192.168.1.1")
+        True
+        >>> _is_valid_ip("2001:db8::1")
+        True
+        >>> _is_valid_ip("invalid")
+        False
+    """
     try:
         ipaddress.ip_address(ip_str)
         return True
@@ -25,7 +59,26 @@ def _is_valid_ip(ip_str: str) -> bool:
         return False
 
 def _deep_merge_dicts(base: Dict[str, Any], override: Dict[str, Any]) -> Dict[str, Any]:
-    """Recursively merges dictionaries, returning a new dict."""
+    """
+    Recursively merge two dictionaries, with override values taking precedence.
+    
+    Creates a new dictionary by merging the base dictionary with the override
+    dictionary. For nested dictionaries, the merge is performed recursively.
+    Override values completely replace base values for non-dict types.
+    
+    Args:
+        base: Base dictionary to merge from
+        override: Override dictionary with values that take precedence
+        
+    Returns:
+        New dictionary containing the merged result
+        
+    Examples:
+        >>> base = {"a": 1, "b": {"c": 2, "d": 3}}
+        >>> override = {"b": {"c": 4}, "e": 5}
+        >>> _deep_merge_dicts(base, override)
+        {"a": 1, "b": {"c": 4, "d": 3}, "e": 5}
+    """
     result: Dict[str, Any] = dict(base)
     for key, value in override.items():
         if (
@@ -40,33 +93,31 @@ def _deep_merge_dicts(base: Dict[str, Any], override: Dict[str, Any]) -> Dict[st
 
 def load_config() -> Dict[str, Any]:
     """
-    Loads configuration from 'ip_config.json' and merges with defaults.
-    Validates configuration values and provides sensible defaults.
+    Load configuration from 'ip_config.json' and merge with defaults.
+    
+    Loads user configuration from ip_config.json file and merges it with
+    sensible defaults. Validates all configuration values and expands user paths.
+    
+    Returns:
+        Dictionary containing validated configuration
+        
+    Raises:
+        No exceptions are raised; all errors are handled gracefully.
     """
     config_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "ip_config.json")
     
+    # Build default configuration from constants
     default_config: Dict[str, Any] = {
-        "cache_dir": "~/.cache/starship",
-        "cache_expiry": 600,  # Cache expiry in seconds (10 minutes)
-        "timeout": 3,
-        "max_retries": 3,
+        "cache_dir": ConfigDefaults.CACHE_DIR,
+        "cache_expiry": ConfigDefaults.CACHE_EXPIRY,
+        "timeout": ConfigDefaults.TIMEOUT,
+        "max_retries": ConfigDefaults.MAX_RETRIES,
         "abuseipdb_api_key": None,
-        "abuseipdb_enabled": True,
-        "display_mode": "icons",  # "icons" or "text"
-        "display_options": { "max_org_length": 20 },
-        "text_colors": {
-            "firewall": "green",
-            "vpn": "blue", 
-            "antivirus": "yellow",
-            "network_security": "cyan",
-            "system_integrity": "magenta",
-            "bitwarden": "red",
-            "ssh": "white",
-            "aws": "orange",
-            "privacy": "purple",
-            "abuse": "bright_green"
-        },
-        "logging": { "enabled": False, "level": "INFO", "log_file": "~/.cache/starship/ip_location.log" }
+        "abuseipdb_enabled": ConfigDefaults.ABUSEIPDB_ENABLED,
+        "display_mode": ConfigDefaults.DISPLAY_MODE,
+        "display_options": {"max_org_length": ConfigDefaults.MAX_ORG_LENGTH},
+        "text_colors": ConfigDefaults.DEFAULT_TEXT_COLORS.copy(),
+        "logging": ConfigDefaults.DEFAULT_LOGGING.copy()
     }
 
     # Load API key from environment
@@ -94,32 +145,43 @@ def load_config() -> Dict[str, Any]:
     return config
 
 def _validate_config(config: Dict[str, Any]) -> Dict[str, Any]:
-    """Validate configuration values and provide sensible defaults."""
+    """
+    Validate configuration values and provide sensible defaults.
+    
+    Validates all configuration parameters against their expected types and ranges,
+    replacing invalid values with sensible defaults.
+    
+    Args:
+        config: Configuration dictionary to validate
+        
+    Returns:
+        Validated configuration dictionary
+    """
     # Validate cache_expiry (must be positive integer)
-    if not isinstance(config.get('cache_expiry'), int) or config.get('cache_expiry', 0) <= 0:
-        config['cache_expiry'] = 600
+    if not ValidationRules.is_positive_number(config.get('cache_expiry')):
+        config['cache_expiry'] = ConfigDefaults.CACHE_EXPIRY
     
     # Validate timeout (must be positive number)
-    if not isinstance(config.get('timeout'), (int, float)) or config.get('timeout', 0) <= 0:
-        config['timeout'] = 3
+    if not ValidationRules.is_positive_number(config.get('timeout')):
+        config['timeout'] = ConfigDefaults.TIMEOUT
     
     # Validate max_retries (must be non-negative integer)
-    if not isinstance(config.get('max_retries'), int) or config.get('max_retries', 0) < 0:
-        config['max_retries'] = 3
+    if not ValidationRules.is_non_negative_integer(config.get('max_retries')):
+        config['max_retries'] = ConfigDefaults.MAX_RETRIES
     
     # Validate abuseipdb_enabled (must be boolean)
     if not isinstance(config.get('abuseipdb_enabled'), bool):
-        config['abuseipdb_enabled'] = True
+        config['abuseipdb_enabled'] = ConfigDefaults.ABUSEIPDB_ENABLED
     
     # Validate logging level
-    valid_levels = ['DEBUG', 'INFO', 'WARNING', 'ERROR', 'CRITICAL']
-    if config.get('logging', {}).get('level', '').upper() not in valid_levels:
-        config.setdefault('logging', {})['level'] = 'INFO'
+    log_level = config.get('logging', {}).get('level', '')
+    if not ValidationRules.is_valid_log_level(log_level):
+        config.setdefault('logging', {})['level'] = ConfigDefaults.DEFAULT_LOGGING['level']
     
     # Validate display mode
-    valid_modes = ['icons', 'text']
-    if config.get('display_mode', 'icons') not in valid_modes:
-        config['display_mode'] = 'icons'
+    display_mode = config.get('display_mode', ConfigDefaults.DISPLAY_MODE)
+    if not ValidationRules.is_valid_display_mode(display_mode):
+        config['display_mode'] = ConfigDefaults.DISPLAY_MODE
     
     return config
 
@@ -192,104 +254,77 @@ def setup_logging(config: Dict[str, Any]) -> Optional[logging.Logger]:
 # --- Core Data Fetching & Parsing ---
 
 def fetch_ip_info(config: Dict[str, Any], logger: Optional[logging.Logger] = None) -> Optional[Dict[str, Any]]:
-    """Fetches public IP information from multiple services concurrently with retry/backoff.
-
-    Returns the first successful result.
     """
-    services = [
-        {"name": "ipinfo.io", "url": "https://ipinfo.io/json", "parser": parse_ipinfo},
-        {"name": "ip-api.com", "url": "https://ip-api.com/json?fields=status,message,countryCode,city,regionName,org,as,query,timezone", "parser": parse_ip_api},
-        {"name": "ipify", "url": "https://api.ipify.org?format=json", "parser": parse_ipify},
-        {"name": "ifconfig.co", "url": "https://ifconfig.co/json", "parser": parse_ifconfig},
-    ]
-    headers = {'User-Agent': 'Mozilla/5.0 (compatible; starship-prompt/1.0)'}
-    max_retries = max(0, int(config.get('max_retries', 3)))
-    timeout = float(config.get('timeout', 3))
-
-    def fetch_service(service: Dict[str, Any]) -> Optional[Dict[str, Any]]:
-        service_name = service.get('name', 'unknown')
-        for attempt in range(max_retries + 1):
-            try:
-                req = Request(service["url"], headers=headers)
-                with urlopen(req, timeout=timeout) as response:
-                    if response.status != 200:
-                        continue
-                    data = json.loads(response.read().decode('utf-8'))
-                result = service["parser"](data)
-                if result and result.get("ip"):
-                    if logger:
-                        logger.info(f"Successfully fetched IP info from {service_name}")
-                    return result
-            except (URLError, HTTPError, json.JSONDecodeError) as e:
-                if logger:
-                    logger.warning(f"Service {service_name} attempt {attempt+1} failed: {type(e).__name__}")
-                if attempt < max_retries:
-                    sleep_s = min(2.0 ** attempt * 0.25 + random.uniform(0, 0.25), 2.5)
-                    time.sleep(sleep_s)
-            except Exception as e:
-                if logger:
-                    logger.warning(f"Service {service_name} attempt {attempt+1} failed: unexpected error")
-                if attempt < max_retries:
-                    time.sleep(0.25)
-        return None
-
-    with ThreadPoolExecutor(max_workers=len(services)) as executor:
-        future_to_service = {executor.submit(fetch_service, svc): svc for svc in services}
-        try:
-            for future in as_completed(future_to_service, timeout=timeout + 1):
-                try:
-                    result = future.result()
-                    if result:
-                        # Cancel remaining futures
-                        for f in future_to_service:
-                            if f != future and not f.done():
-                                f.cancel()
-                        return result
-                except Exception as e:
-                    if logger:
-                        logger.warning(f"Future execution failed: {type(e).__name__}")
-                    continue
-        except Exception as e:
-            if logger:
-                logger.warning(f"ThreadPoolExecutor failed: {type(e).__name__}")
-    return None
+    Fetch public IP information from multiple services concurrently.
+    
+    This function attempts to fetch IP information from multiple services
+    in parallel and returns the first successful result. It implements
+    retry logic with exponential backoff and jitter for network resilience.
+    
+    Args:
+        config: Configuration dictionary containing:
+            - timeout: Request timeout in seconds (default: 3)
+            - max_retries: Maximum retry attempts (default: 3)
+        logger: Optional logger instance for debugging
+        
+    Returns:
+        Dictionary containing IP information with keys:
+            - ip: Public IP address
+            - country: Two-letter country code
+            - city: City name
+            - region: Region/state name
+            - org: Organization/ISP name
+            - timezone: Timezone identifier
+            - asn: Dictionary with ASN ID and name
+            
+        Returns None if all services fail or timeout.
+        
+    Raises:
+        No exceptions are raised; all errors are logged and handled gracefully.
+    """
+    fetcher = IPFetcher(config, logger)
+    return fetcher.fetch_ip_info()
 
 def fetch_abuseipdb_info(ip_address: Optional[str], api_key: Optional[str], logger: Optional[logging.Logger] = None) -> Optional[Dict[str, Any]]:
-    """Fetches the abuse score for an IP from AbuseIPDB.com."""
-    if not api_key or not ip_address:
-        return None
-
-    # Basic IP address validation
-    if not _is_valid_ip(ip_address):
-        if logger:
-            logger.warning("Invalid IP address format")
-        return None
-
-    url = f'https://api.abuseipdb.com/api/v2/check?ipAddress={ip_address}&maxAgeInDays=90'
-    headers = {'Accept': 'application/json', 'Key': api_key, 'User-Agent': 'starship-prompt/1.0'}
-
-    try:
-        req = Request(url, headers=headers)
-        with urlopen(req, timeout=3) as response:
-            if response.status != 200:
-                if logger:
-                    logger.warning(f"AbuseIPDB returned HTTP {response.status}")
-                return None
-            data = json.loads(response.read().decode('utf-8'))
-        return data.get("data", {})
-    except (URLError, HTTPError) as e:
-        if logger:
-            logger.warning(f"AbuseIPDB network error: {type(e).__name__}")
-    except json.JSONDecodeError:
-        if logger:
-            logger.warning("AbuseIPDB returned invalid JSON")
-    except Exception as e:
-        if logger:
-            logger.warning(f"AbuseIPDB check failed: {type(e).__name__}")
-    return None
+    """
+    Fetch abuse score for an IP address from AbuseIPDB.
+    
+    Args:
+        ip_address: IP address to check
+        api_key: AbuseIPDB API key
+        logger: Optional logger instance
+        
+    Returns:
+        Dictionary with abuse information or None
+    """
+    client = AbuseIPDBClient(api_key, logger)
+    return client.fetch_abuse_info(ip_address)
 
 def parse_ipinfo(data: Dict[str, Any]) -> Dict[str, Any]:
-    """Parses the JSON response from ipinfo.io."""
+    """
+    Parse JSON response from ipinfo.io API.
+    
+    Extracts IP information from the ipinfo.io API response and normalizes
+    it into a standard format. Handles ASN data extraction from nested objects.
+    
+    Args:
+        data: Raw JSON response from ipinfo.io API
+        
+    Returns:
+        Dictionary containing normalized IP information:
+            - ip: Public IP address
+            - country: Two-letter country code
+            - city: City name
+            - region: Region/state name
+            - org: Organization/ISP name
+            - timezone: Timezone identifier
+            - asn: Dictionary with ASN ID and name
+            
+    Example:
+        >>> data = {"ip": "192.168.1.1", "country": "US", "city": "New York"}
+        >>> parse_ipinfo(data)
+        {"ip": "192.168.1.1", "country": "US", "city": "New York", ...}
+    """
     asn_data = data.get("asn", {})
     return {
         "ip": data.get("ip"),
@@ -305,7 +340,30 @@ def parse_ipinfo(data: Dict[str, Any]) -> Dict[str, Any]:
     }
 
 def parse_ip_api(data: Dict[str, Any]) -> Dict[str, Any]:
-    """Parses the JSON response from ip-api.com."""
+    """
+    Parse JSON response from ip-api.com API.
+    
+    Extracts IP information from the ip-api.com API response and normalizes
+    it into a standard format. Handles ASN data parsing from string format.
+    
+    Args:
+        data: Raw JSON response from ip-api.com API
+        
+    Returns:
+        Dictionary containing normalized IP information:
+            - ip: Public IP address (from 'query' field)
+            - country: Two-letter country code (from 'countryCode' field)
+            - city: City name
+            - region: Region/state name (from 'regionName' field)
+            - org: Organization/ISP name
+            - timezone: Timezone identifier
+            - asn: Dictionary with parsed ASN ID and name
+            
+    Example:
+        >>> data = {"query": "192.168.1.1", "countryCode": "US", "city": "New York"}
+        >>> parse_ip_api(data)
+        {"ip": "192.168.1.1", "country": "US", "city": "New York", ...}
+    """
     as_string = data.get("as", "")
     as_parts = as_string.split(" ", 1) if isinstance(as_string, str) else []
     return {
@@ -322,11 +380,51 @@ def parse_ip_api(data: Dict[str, Any]) -> Dict[str, Any]:
     }
 
 def parse_ipify(data: Dict[str, Any]) -> Dict[str, Any]:
-    """Parses the JSON response from api.ipify.org (IP only)."""
+    """
+    Parse JSON response from api.ipify.org API.
+    
+    This service only provides IP address information, so the result is minimal.
+    Used as a fallback when other services fail.
+    
+    Args:
+        data: Raw JSON response from api.ipify.org API
+        
+    Returns:
+        Dictionary containing only IP information:
+            - ip: Public IP address
+            
+    Example:
+        >>> data = {"ip": "192.168.1.1"}
+        >>> parse_ipify(data)
+        {"ip": "192.168.1.1"}
+    """
     return {"ip": data.get("ip")}
 
 def parse_ifconfig(data: Dict[str, Any]) -> Dict[str, Any]:
-    """Parses the JSON response from ifconfig.co/json."""
+    """
+    Parse JSON response from ifconfig.co API.
+    
+    Extracts IP information from the ifconfig.co API response and normalizes
+    it into a standard format. Handles variable field names and missing data.
+    
+    Args:
+        data: Raw JSON response from ifconfig.co API
+        
+    Returns:
+        Dictionary containing normalized IP information:
+            - ip: Public IP address
+            - country: Two-letter country code (from 'country_iso' or 'country')
+            - city: City name
+            - region: Region/state name (from 'region_name' or 'region')
+            - org: Organization/ISP name (from 'asn_org' or 'org')
+            - timezone: Timezone identifier
+            - asn: Dictionary with ASN ID and name
+            
+    Example:
+        >>> data = {"ip": "192.168.1.1", "country_iso": "US", "city": "New York"}
+        >>> parse_ifconfig(data)
+        {"ip": "192.168.1.1", "country": "US", "city": "New York", ...}
+    """
     # ifconfig.co fields vary; use what is available
     asn_id = data.get("asn") or ""
     org = data.get("asn_org") or data.get("org")
@@ -343,7 +441,26 @@ def parse_ifconfig(data: Dict[str, Any]) -> Dict[str, Any]:
 # --- Formatting and Display ---
 
 def mask_ip_address(ip_string: Optional[str]) -> Optional[str]:
-    """Masks last segment of IPv4/IPv6 address for privacy."""
+    """
+    Mask the last segment of an IP address for privacy protection.
+    
+    Replaces the last octet of IPv4 addresses or the last segment of IPv6
+    addresses with 'x' to provide privacy while maintaining network identification.
+    
+    Args:
+        ip_string: IP address string to mask
+        
+    Returns:
+        Masked IP address string or original string if masking fails
+        
+    Examples:
+        >>> mask_ip_address("192.168.1.100")
+        "192.168.1.x"
+        >>> mask_ip_address("2001:db8::1")
+        "2001:db8::x"
+        >>> mask_ip_address("invalid")
+        "invalid"
+    """
     if not ip_string or not isinstance(ip_string, str):
         return ip_string
 
@@ -368,7 +485,26 @@ def mask_ip_address(ip_string: Optional[str]) -> Optional[str]:
     return ip_string
 
 def country_to_flag(country_code: Optional[str]) -> str:
-    """Converts a two-letter ISO country code into a flag emoji."""
+    """
+    Convert a two-letter ISO country code into a flag emoji.
+    
+    Uses Unicode regional indicator symbols to create flag emojis from
+    ISO 3166-1 alpha-2 country codes. Returns a world emoji for invalid codes.
+    
+    Args:
+        country_code: Two-letter ISO country code (e.g., "US", "GB", "JP")
+        
+    Returns:
+        Flag emoji string or world emoji (🌐) for invalid codes
+        
+    Examples:
+        >>> country_to_flag("US")
+        "🇺🇸"
+        >>> country_to_flag("GB")
+        "🇬🇧"
+        >>> country_to_flag("invalid")
+        "🌐"
+    """
     if not isinstance(country_code, str) or len(country_code) != 2:
         return "🌐"
     try:
@@ -377,7 +513,27 @@ def country_to_flag(country_code: Optional[str]) -> str:
         return "🌐"
 
 def format_location(ip_data: Optional[Dict[str, Any]], config: Dict[str, Any], vpn_status: str = "") -> str:
-    """Formats the IP location data into a compact string with VPN-aware flag display."""
+    """
+    Format IP location data into a compact display string.
+    
+    Creates a user-friendly location display with country flag and location name.
+    Handles VPN status to show appropriate location information.
+    
+    Args:
+        ip_data: Dictionary containing IP location information
+        config: Configuration dictionary for display settings
+        vpn_status: VPN status string to determine location display
+        
+    Returns:
+        Formatted location string with flag and location name
+        
+    Examples:
+        >>> ip_data = {"country": "US", "city": "New York"}
+        >>> format_location(ip_data, config, "")
+        "🇺🇸 New York"
+        >>> format_location(None, config, "")
+        "🔌 offline"
+    """
     if not ip_data or not isinstance(ip_data, dict):
         return "🔌 offline"
 
@@ -476,32 +632,17 @@ def get_abuse_status(abuse_data: Optional[Dict[str, Any]], config: Dict[str, Any
         return text
 
 def get_firewall_status(config: Dict[str, Any]) -> str:
-    """Check firewall status including Little Snitch on macOS."""
-    try:
-        if sys.platform == "darwin":
-            # Check for Little Snitch first
-            try:
-                result = subprocess.run(['pgrep', '-f', 'Little Snitch'], capture_output=True, text=True, timeout=1)
-                if result.returncode == 0 and result.stdout.strip():
-                    return get_status_display("🛡️", "FW+", config, "firewall")  # Little Snitch is running
-            except Exception:
-                pass
-            
-            # Fallback to pfctl
-            result = subprocess.run(['pfctl', '-s', 'info'], capture_output=True, text=True, timeout=1)
-            if "Status: Enabled" in result.stdout:
-                return get_status_display("🛡️", "FW+", config, "firewall")
-            else:
-                return get_status_display("🚫", "FW-", config, "firewall")
-        elif sys.platform == "linux":
-            result = subprocess.run(['ufw', 'status'], capture_output=True, text=True, timeout=1)
-            if "Status: active" in result.stdout:
-                return get_status_display("🛡️", "FW+", config, "firewall")
-            else:
-                return get_status_display("🚫", "FW-", config, "firewall")
-    except Exception:
-        pass
-    return ""
+    """
+    Check firewall status across different platforms.
+    
+    Args:
+        config: Configuration dictionary
+        
+    Returns:
+        Status display string or empty string if not available
+    """
+    checker = PlatformSecurityChecker(config)
+    return checker.check_firewall_status()
 
 def get_ssh_agent_status(config: Dict[str, Any]) -> str:
     """Check if SSH agent has loaded keys."""
@@ -531,86 +672,56 @@ def get_bitwarden_status(config: Dict[str, Any]) -> str:
     return ""
 
 def get_antivirus_status(config: Dict[str, Any]) -> str:
-    """Check antivirus status on macOS - specifically Intego."""
-    try:
-        if sys.platform == "darwin":
-            # Check for Intego antivirus
-            try:
-                # Check for Intego processes
-                result = subprocess.run(['pgrep', '-f', 'Intego'], capture_output=True, text=True, timeout=1)
-                if result.returncode == 0 and result.stdout.strip():
-                    return get_status_display("🛡️", "AV+", config, "antivirus")  # Intego is running
-            except Exception:
-                pass
-            
-            # Check for Intego in Applications
-            try:
-                result = subprocess.run(['ls', '/Applications'], capture_output=True, text=True, timeout=1)
-                if result.returncode == 0 and 'Intego' in result.stdout:
-                    return get_status_display("🛡️", "AV+", config, "antivirus")  # Intego is installed
-            except Exception:
-                pass
-            
-            # Fallback: Check for ClamAV
-            result = subprocess.run(['clamdscan', '--version'], capture_output=True, text=True, timeout=1)
-            if result.returncode == 0:
-                return get_status_display("🦠", "AV+", config, "antivirus")
-            
-            # Fallback: Check for built-in XProtect
-            result = subprocess.run(['xattr', '-l', '/System/Library/CoreServices/XProtect.bundle'], capture_output=True, text=True, timeout=1)
-            if result.returncode == 0:
-                return get_status_display("🛡️", "AV+", config, "antivirus")
-    except Exception:
-        pass
-    return ""
+    """
+    Check antivirus status across different platforms.
+    
+    Args:
+        config: Configuration dictionary
+        
+    Returns:
+        Status display string or empty string if not available
+    """
+    checker = PlatformSecurityChecker(config)
+    return checker.check_antivirus_status()
 
 def get_privacy_status(config: Dict[str, Any]) -> str:
-    """Check privacy-related settings on macOS."""
-    try:
-        if sys.platform == "darwin":
-            # Check if camera/microphone access is restricted
-            camera_result = subprocess.run(['sqlite3', '/Library/Application Support/com.apple.TCC/TCC.db', 
-                                          "SELECT service FROM access WHERE service='kTCCServiceCamera'"], 
-                                         capture_output=True, text=True, timeout=1)
-            mic_result = subprocess.run(['sqlite3', '/Library/Application Support/com.apple.TCC/TCC.db', 
-                                       "SELECT service FROM access WHERE service='kTCCServiceMicrophone'"], 
-                                      capture_output=True, text=True, timeout=1)
-            
-            if camera_result.returncode == 0 or mic_result.returncode == 0:
-                return get_status_display("🔒", "PRIV+", config, "privacy")  # Privacy controls active
-    except Exception:
-        pass
-    return ""
+    """
+    Check privacy-related settings across different platforms.
+    
+    Args:
+        config: Configuration dictionary
+        
+    Returns:
+        Status display string or empty string if not available
+    """
+    checker = PlatformSecurityChecker(config)
+    return checker.check_privacy_status()
 
 def get_network_security_status(config: Dict[str, Any]) -> str:
-    """Check network security indicators."""
-    try:
-        # Check for suspicious network activity
-        if sys.platform == "darwin":
-            # Check for unusual network connections
-            result = subprocess.run(['netstat', '-rn'], capture_output=True, text=True, timeout=1)
-            if result.returncode == 0:
-                # Look for VPN routes or suspicious gateways
-                if 'tun' in result.stdout or 'utun' in result.stdout:
-                    return get_status_display("🌐", "NET+", config, "network_security")  # VPN detected
-    except Exception:
-        pass
-    return ""
+    """
+    Check network security indicators across different platforms.
+    
+    Args:
+        config: Configuration dictionary
+        
+    Returns:
+        Status display string or empty string if not available
+    """
+    checker = NetworkStatusChecker(config)
+    return checker.check_network_security_status()
 
 def get_system_integrity_status(config: Dict[str, Any]) -> str:
-    """Check system integrity protection status."""
-    try:
-        if sys.platform == "darwin":
-            # Check System Integrity Protection
-            result = subprocess.run(['csrutil', 'status'], capture_output=True, text=True, timeout=1)
-            if result.returncode == 0:
-                if 'enabled' in result.stdout.lower():
-                    return get_status_display("🔐", "SIP+", config, "system_integrity")  # SIP enabled
-                else:
-                    return get_status_display("⚠️", "SIP-", config, "system_integrity")  # SIP disabled
-    except Exception:
-        pass
-    return ""
+    """
+    Check system integrity protection status across different platforms.
+    
+    Args:
+        config: Configuration dictionary
+        
+    Returns:
+        Status display string or empty string if not available
+    """
+    checker = PlatformSecurityChecker(config)
+    return checker.check_system_integrity_status()
 
 # --- Caching Logic ---
 
