@@ -67,7 +67,7 @@ format = '[ $user]($style)'
 [hostname]
 ssh_only = false
 #format = "[$hostname]($style)"
-format = "[@local ]($style)"
+format = "[ ]($style)"
 trim_at = "-"
 style = "bg:#d65d0e fg:#fbf1c7"
 disabled = false
@@ -84,7 +84,7 @@ unknown_indicator = "❓"
 [directory]
 style = "fg:#fbf1c7 bg:#d79921"
 format = "[$path ]($style)"
-truncation_length = 3
+truncation_length = 2
 truncation_symbol = "…/"
 
 [directory.substitutions]
