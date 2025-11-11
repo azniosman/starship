@@ -29,7 +29,8 @@ $time\
 [ ](fg:#3c3836)\
 $line_break$character"""
 
-right_format = "$aws$custom"
+#right_format = "$aws$custom"
+right_format = "$custom"
 
 [os]
 disabled = false
@@ -241,7 +242,7 @@ symbol = "☁️  "
 style = "bold white"
 
 [custom.prompt]
-command = "python ~/.config/starship/starship_manager.py prompt"
+command = "python3 ~/.config/starship/starship_manager.py prompt"
 when = true
 format = "[$output]($style) "
 style = "bold #83a598"
