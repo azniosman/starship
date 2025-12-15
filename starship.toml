@@ -244,6 +244,7 @@ style = "bold white"
 [custom.prompt]
 command = "python3 ~/.config/starship/starship_manager.py prompt"
 when = true
+ignore_timeout = true
 format = "[$output]($style) "
 style = "bold #83a598"
 # It is recommended to run the cache update in the background periodically.
